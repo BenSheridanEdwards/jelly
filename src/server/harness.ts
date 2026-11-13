@@ -1,3 +1,4 @@
+import { createCodexProvider } from "./codex-provider";
 import { discoverProviders, type ProviderStatus } from "./providers";
 import { BROWSER_GUIDANCE } from "./browser/repl-docs";
 import { createJellyClaudeProvider } from "./claude-code-provider";
@@ -98,6 +99,7 @@ export class Harness {
       apiKey: { ...provider.auth!.apiKey!, check: async () => harness.claude.status().claudeReady
         ? { type: "oauth", source: "Claude Code subscription" } : undefined },
     } });
+    runtime.registerNativeProvider(createCodexProvider(() => harness.providers.find(p => p.id === "codex")));
     return harness;
   }
   config(
@@ -115,8 +117,9 @@ export class Harness {
       mode === "auto"
         ? claudeReady ? "claude-code" : chatgptReady ? "chatgpt" : this.providers.some(p => p.id === "codex" && p.state === "ready") ? "codex-cli" : null
         : mode;
-    const ready = activeMode === "claude-code" ? claudeReady : activeMode === "chatgpt" ? chatgptReady : activeMode === "api" && apiReady;
-    const provider = activeMode === "claude-code" ? "claude-code" : activeMode === "chatgpt" ? "openai-codex" : activeMode === "api" ? "openai" : "";
+    const codexReady = this.providers.some(p => p.id === "codex" && p.state === "ready");
+    const ready = activeMode === "claude-code" ? claudeReady : activeMode === "chatgpt" ? chatgptReady : activeMode === "codex-cli" ? codexReady : activeMode === "api" && apiReady;
+    const provider = activeMode === "claude-code" ? "claude-code" : activeMode === "chatgpt" ? "openai-codex" : activeMode === "codex-cli" ? "codex-cli" : activeMode === "api" ? "openai" : "";
     return {
       mode,
       selectedModel: settings.model,
@@ -129,7 +132,7 @@ export class Harness {
       claudeNotice,
       chatgptReady,
       apiReady,
-      notice: activeMode === "codex-cli" ? "Codex CLI detected. Runtime support is not implemented yet." : activeMode === "claude-code" ? claudeNotice : !ready
+      notice: activeMode === "codex-cli" ? "Codex ChatGPT subscription" : activeMode === "claude-code" ? claudeNotice : !ready
         ? activeMode === "chatgpt"
           ? "ChatGPT is not connected. Connect your ChatGPT subscription in Settings."
           : activeMode === "api"
