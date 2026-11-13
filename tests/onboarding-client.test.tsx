@@ -14,9 +14,9 @@ test("ready subscription sessions show versions and select their exact provider"
   expect(chosen).toEqual(["claude-code","codex-cli"]);
 });
 for (const [state,label] of [["install","Install"],["signin","Sign in"],["error","Retry"]] as const) {
-  test(`${state} has one useful state and no login/install action`, () => {
+  test(`${state} offers an action`, () => {
     render(<OnboardingCards providers={[{id:"claude",state}]} onUse={() => {throw Error("unexpected action");}} />);
-    expect(screen.getByText(label)).toBeTruthy();
+    expect(screen.getByRole("button", {name:label})).toBeTruthy();
     expect(screen.queryByRole("button",{name:"Use Claude Code"})).toBeNull();
   });
 }
