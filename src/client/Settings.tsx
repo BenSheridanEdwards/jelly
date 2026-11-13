@@ -331,7 +331,7 @@ export function Settings({
           onChange={(next) => { setMode(next); if (!modelsForMode(next).some(option => option.id === model)) setModel(defaultModelForMode(next)); }}
         />
       )}
-      {(page === "Claude subscription" || page === "Codex subscription") && <Onboarding only={page === "Claude subscription" ? "claude" : "codex"} onSelected={next => {
+      {(page === "Claude subscription" || page === "Codex subscription") && <Onboarding hostName={data.instance.name} only={page === "Claude subscription" ? "claude" : "codex"} onSelected={next => {
         if (next) { setMode(next); if (!modelsForMode(next).some(m => m.id === model)) setModel(defaultModelForMode(next)); }
         void api<Provider[]>("/providers").then(value => { if (Array.isArray(value)) setProviders(value); }).catch(() => {});
         void refresh();
