@@ -1,3 +1,4 @@
+import { discoverProviders, type ProviderStatus } from "./providers";
 import { BROWSER_GUIDANCE } from "./browser/repl-docs";
 import { createJellyClaudeProvider } from "./claude-code-provider";
 import { ClaudeCodeConnection, type ClaudeStatusCheck } from "./claude-code";
@@ -51,6 +52,8 @@ import { HttpError } from "./errors";
 import { DESKTOP_INSTRUCTIONS } from "../shared/desktop";
 
 export class Harness {
+  providers: ProviderStatus[] = [];
+  async refreshProviders() { this.providers = await discoverProviders(); }
   private sessions = new WeakMap<AgentSession, SessionWork>();
   readonly chatgptTransport = new ChatGPTTransport();
   readonly images: GeneratedImages;
@@ -110,7 +113,7 @@ export class Harness {
     const { claudeReady, claudeNotice } = this.claude.status();
     const activeMode =
       mode === "auto"
-        ? chatgptReady ? "chatgpt" : apiReady ? "api" : null
+        ? claudeReady ? "claude-code" : chatgptReady ? "chatgpt" : this.providers.some(p => p.id === "codex" && p.state === "ready") ? "codex-cli" : null
         : mode;
     const ready = activeMode === "claude-code" ? claudeReady : activeMode === "chatgpt" ? chatgptReady : activeMode === "api" && apiReady;
     const provider = activeMode === "claude-code" ? "claude-code" : activeMode === "chatgpt" ? "openai-codex" : activeMode === "api" ? "openai" : "";
@@ -126,7 +129,7 @@ export class Harness {
       claudeNotice,
       chatgptReady,
       apiReady,
-      notice: activeMode === "claude-code" ? claudeNotice : !ready
+      notice: activeMode === "codex-cli" ? "Codex CLI detected. Runtime support is not implemented yet." : activeMode === "claude-code" ? claudeNotice : !ready
         ? activeMode === "chatgpt"
           ? "ChatGPT is not connected. Connect your ChatGPT subscription in Settings."
           : activeMode === "api"

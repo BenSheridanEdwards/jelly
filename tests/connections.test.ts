@@ -1,7 +1,7 @@
 import { unavailableClaudeStatus } from "./fixtures/claude-code";
 import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, statSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { resolve, join } from "node:path";
 import { tmpdir } from "node:os";
 import { startApp } from "../src/server/app";
 import type { ChatGPTLogin } from "../src/server/connections";
@@ -24,7 +24,10 @@ const credentials = {
   accountId: "test-account",
 };
 async function fixture(login?: ChatGPTLogin, ttl = 10000) {
-  const dir = mkdtempSync(join(tmpdir(), "jelly-connections-"));
+  const dir = resolve(mkdtempSync(join(tmpdir(), "jelly-connections-")));
+  const previousHome = process.env.HOME;
+  process.env.HOME = dir;
+  cleanups.push(() => { process.env.HOME = previousHome; });
   const app = await startApp({ claudeStatusCheck: unavailableClaudeStatus,
     dataDir: dir,
     configDir: join(dir, "config"),
@@ -191,6 +194,7 @@ test("device login belongs to its starting session and automatically saves only 
     type: "oauth",
   });
   expect(statSync(join(f.dir, "auth.json")).mode & 0o777).toBe(0o600);
+  await until(async () => (await (await f.req("/status", {}, headers)).json()).flow?.status === "connected");
   const completed = await (await f.req("/status", {}, headers)).json();
   expect(completed.flow).toMatchObject({
     status: "connected",
@@ -329,4 +333,30 @@ test("production startup has no scripted provider and requires credentials even 
   expect(response.status).toBe(409);
   expect(await response.text()).toContain("Settings");
   expect(app.store.runs(snapshot.agents[0]!.id)).toEqual([]);
+});
+
+test("auto never spends an API key and codex-cli stays unavailable until its runtime exists", async () => {
+  const { app } = await fixture();
+  const h = app.service.harness;
+  await h.auth.saveKey(key);
+  expect(h.config("auto").activeMode).not.toBe("api");
+  expect(h.config("codex-cli" as any).ready).toBe(false);
+});
+
+test("auto prefers ChatGPT over discovered but unrunnable Codex and keeps Codex-only unavailable", async () => {
+  const f = await fixture();
+  const { app } = f;
+  const h = app.service.harness;
+  h.providers = [{ id: "codex", state: "ready", version: "1.0", path: "/fake/codex" }];
+  expect(h.config("auto").activeMode).toBe("codex-cli");
+  expect(h.config("auto").ready).toBe(false);
+  h.auth.hasAuth = () => true;
+  expect(h.config("auto").activeMode).toBe("chatgpt");
+  expect(h.config("auto").ready).toBe(true);
+  h.claude.status = () => ({ claudeReady: true, claudeNotice: "ready" });
+  expect(h.config("auto").activeMode).toBe("claude-code");
+  h.refreshProviders = async () => {};
+  const response = await fetch(new URL("/api/providers", app.server.url), { headers: await f.session() });
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual(h.providers);
 });

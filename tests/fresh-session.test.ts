@@ -154,6 +154,7 @@ async function fixture(mode: "api" | "chatgpt" = "api") {
       baseUrl: `http://127.0.0.1:${fake.port}/v1`,
     });
     app.service.setMode(mode);
+    for (const agent of app.store.agents()) if (!agent.providerLocked) app.service.setConfig({ agentId: agent.id, mode });
   };
   await configure();
   const id = app.store.agents()[0]!.id;

@@ -174,6 +174,7 @@ for (const mode of ["api", "chatgpt"] as const)
         baseUrl: `http://127.0.0.1:${fake.port}/v1`,
       });
       app.service.setMode(mode);
+    for (const agent of app.store.agents()) if (!agent.providerLocked) app.service.setConfig({ agentId: agent.id, mode });
       const id = app.store.agents()[0]!.id;
       const untouched = app.service.createAgent({ name: "Untouched", instructions: "", color: "#fff" });
       app.service.start(id, "api-one", "Hello via API");

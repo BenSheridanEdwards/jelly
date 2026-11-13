@@ -287,8 +287,8 @@ test("startup interrupts stale approvals and rejects their execution", async () 
     id,
     "interrupted",
     "request",
-    "demo",
-    "local-demo",
+    "api",
+    "gpt-6-astra",
   );
   const item = app.store.createIntervention(
     "sudo",

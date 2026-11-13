@@ -340,50 +340,51 @@ test.each(["failed", "cancelled"] as const)(
     const create = spyOn(app.service.harness, "create").mockRejectedValue(
       new Error("fixture failure"),
     );
+    app.service.harness.auth.hasAuth = (provider) => provider === "openai-codex";
     app.service.setConfig({ agentId: id, mode: "auto" });
     const started = app.service.start(id, "first", "Hello");
     expect(app.store.agent(id)).toMatchObject({
-      mode: "api",
+      mode: "chatgpt",
       providerLocked: 1,
     });
     if (outcome === "cancelled") app.service.stop(id);
     await app.service.settled();
     create.mockRestore();
     expect(app.store.run(started.run!.id)?.status).toBe(outcome);
-    for (const mode of ["auto", "chatgpt", "claude-code"]) {
+    for (const mode of ["auto", "claude-code", "api"]) {
       const response = await request("/config", "PUT", { agentId: id, mode });
       expect(response.status).toBe(409);
       expect(await response.text()).toContain("new agent");
     }
-    fakeClaude(app);
+
     app.service.setMode("claude-code");
     app.service.harness.auth.hasAuth = (provider) =>
-      provider === "openai-codex";
+      provider === "openai";
     expect(app.service.snapshot(id).agentConfig).toMatchObject({
-      mode: "api",
+      mode: "chatgpt",
       ready: false,
     });
     expect(() =>
       app.service.start(id, "after-disconnect", "No fallback"),
-    ).toThrow("OpenAI API");
+    ).toThrow("ChatGPT");
     expect(() => app.service.freshSession(id, "fresh-disconnected")).toThrow(
-      "OpenAI API",
+      "ChatGPT",
     );
     const reader = new Store(join(dir, "jelly.sqlite"));
     try {
       expect(reader.agent(id)).toMatchObject({
-        mode: "api",
+        mode: "chatgpt",
         providerLocked: 1,
       });
       expect(() =>
-        reader.setAgentConfig(id, "claude-sonnet-5", "high", "claude-code"),
+        reader.setAgentConfig(id, "gpt-6-astra", "high", "api"),
       ).toThrow("locked");
       expect(() =>
         reader.createRun(
           id,
           "wrong",
           "Wrong provider",
-          "chatgpt",
+          "api",
           "gpt-6-astra",
         ),
       ).toThrow("locked");

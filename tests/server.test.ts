@@ -411,7 +411,7 @@ describe("Jelly local client/server foundation", () => {
     expect(app.store.historyPage(id).events.filter((e) => e.type === "message")).toEqual([]);
     expect(app.store.agent(id)?.status).toBe("idle");
   });
-  test("Automatic prefers ChatGPT then API, and requires a connection when neither is available", async () => {
+  test("Automatic prefers ChatGPT and never API, and requires a connection when neither is available", async () => {
     const { app } = await fixture();
     const auth = app.service.harness.auth;
     const original = auth.hasAuth.bind(auth);
@@ -419,7 +419,7 @@ describe("Jelly local client/server foundation", () => {
       provider === "openai-codex" || provider === "openai";
     expect(app.service.harness.config("auto").activeMode).toBe("chatgpt");
     auth.hasAuth = (provider) => provider === "openai";
-    expect(app.service.harness.config("auto").activeMode).toBe("api");
+    expect(app.service.harness.config("auto").activeMode).toBeNull();
     auth.hasAuth = () => false;
     expect(app.service.harness.config("auto")).toMatchObject({ activeMode: null, ready: false });
     expect(app.service.harness.config("api").ready).toBe(false);

@@ -44,6 +44,7 @@ async function setup(extra: Partial<Parameters<typeof startApp>[0]> = {}) {
     ...extra,
   });
   app.service.setMode("api");
+  for (const agent of app.store.agents()) app.service.setConfig({ agentId: agent.id, mode: "api" });
   const origin = `http://127.0.0.1:${app.server.port}`;
   let cookie = "";
   globalThis.fetch = (async (input: any, init: any) => {
@@ -477,6 +478,7 @@ test("sudo approval card submits privately, clears its input, and reflects the c
   try {
     server.service.setMode("api");
     const id = server.store.agents()[0]!.id;
+    server.service.setConfig({ agentId: id, mode: "api" });
     server.service.start(id, crypto.randomUUID(), "/fixture sudo");
     await waitFor(() => expect(server.store.interventions()).toHaveLength(1));
     const item = server.store.interventions()[0]!;
@@ -1163,7 +1165,7 @@ test("chat model menu persists choices without changing connection mode and dism
   expect(app.service.snapshot().config).toMatchObject({
     selectedModel: "gpt-6-astra-ultrafast",
     effort: "high",
-    mode: "auto",
+    mode: "api",
   });
   fireEvent.keyDown(effort, { key: "Escape" });
   fireEvent.click(trigger);
@@ -2659,7 +2661,7 @@ test("Fresh Session menu action preserves chat and shows a durable session bound
 test("read-tool image attachments render outside work disclosures live and after remount", async () => {
   const app = await setup();
   const agent = app.store.agents()[0]!;
-  const run = app.store.createRun(agent.id, crypto.randomUUID(), "Show ad", "demo", "local-demo");
+  const run = app.store.createRun(agent.id, crypto.randomUUID(), "Show ad", "api", "gpt-6-astra");
   const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a7L8AAAAASUVORK5CYII=";
   app.store.event(agent.id, run.id, "message", { role: "user", text: "Show the ad image" });
   app.store.event(agent.id, run.id, "tool_started", { name: "read", toolCallId: "ad-read", args: { path: "ad.png" } });
@@ -3178,6 +3180,7 @@ for (const chatgptReady of [true, false]) {
     const app = await setup();
     app.service.harness.auth.hasAuth = (provider) => provider === "openai-codex" && chatgptReady;
     app.service.setMode("chatgpt");
+    for (const agent of app.store.agents()) app.service.setConfig({ agentId: agent.id, mode: "chatgpt" });
     const fetch = globalThis.fetch;
     globalThis.fetch = (async (input: any, init: any) => {
       const response = await fetch(input, init);
