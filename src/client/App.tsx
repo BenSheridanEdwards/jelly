@@ -1907,7 +1907,7 @@ function AgentsWorkspace({ active, destinationReady, explicitAgentId, explicitNa
           </button>
         )}
         <div className="composer-wrap">
-          {data && !connectionReady && agent && <Onboarding key={agent.id} agentId={agent.id} onSelected={() => void refresh.current()} />}
+          {data && !connectionReady && agent && <Onboarding hostName={data.instance.name} key={agent.id} agentId={agent.id} onSelected={() => void refresh.current()} />}
           {data && !connectionReady && (
             <div className="connection-required" role="status">
               <span>{selectedConfig?.notice}</span>
