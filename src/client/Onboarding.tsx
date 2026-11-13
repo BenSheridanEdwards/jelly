@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 
 type Provider = { id: "claude" | "codex"; state: "ready" | "signin" | "install" | "error"; version?: string; path?: string };
@@ -17,6 +17,8 @@ export function OnboardingCards({ providers, onUse, onAction }: { providers: Pro
   </section>;
 }
 export function Onboarding({ agentId, onSelected }: { agentId: string; onSelected: () => void }) {
+  const running = useRef<AbortController | null>(null);
+  useEffect(() => () => running.current?.abort(), []);
   const [providers, setProviders] = useState<Provider[]>([]);
   const [error, setError] = useState("");
   const [action, setAction] = useState<AbortController | null>(null);
@@ -31,16 +33,32 @@ export function Onboarding({ agentId, onSelected }: { agentId: string; onSelecte
   }, []);
   async function act(provider: Provider) {
     if (action) return;
-    if (provider.state === "error") { setProviders(await api<Provider[]>("/providers")); return; }
-    const controller = new AbortController(); setAction(controller); setError(""); setProgress("");
+    if (provider.state === "error") { try { setProviders(await api<Provider[]>("/providers")); } catch { setError("Could not refresh. Try again."); } return; }
+    const controller = new AbortController(); running.current = controller; setAction(controller); setError(""); setProgress("");
     try {
       const {csrf} = await api<{csrf:string}>("/control-session");
       const response = await fetch(`/api/providers/${provider.id}/${provider.state}`, {method:"POST", credentials:"same-origin", headers:{"x-jelly-csrf":csrf}, signal:controller.signal});
       if (!response.ok || !response.body) throw Error();
       const reader = response.body.getReader(); const decoder = new TextDecoder();
-      for (;;) { const {done,value} = await reader.read(); if (done) break; setProgress(text => (text + decoder.decode(value)).slice(-8192)); }
+      let pending = "", completed = false;
+      const consume = (line: string) => {
+        if (!line.trim()) return;
+        const {text} = JSON.parse(line);
+        if (typeof text !== "string" || /token|secret|password|bearer|sk-|credential|cookie/i.test(text)) return;
+        if (text === "Action failed or cancelled. Retry.") throw Error();
+        if (text === "Completed") completed = true;
+        setProgress(value => (value + text + "\n").slice(-8192));
+      };
+      for (;;) {
+        const {done,value} = await reader.read();
+        pending += decoder.decode(value,{stream:!done});
+        const lines = pending.split("\n"); pending = lines.pop()!;
+        lines.forEach(consume);
+        if (done) { consume(pending); break; }
+      }
+      if (!completed) throw Error();
     } catch { setError("Action failed or cancelled. Try again."); }
-    finally { setAction(null); setProviders(await api<Provider[]>("/providers")); }
+    finally { running.current = null; setAction(null); try { setProviders(await api<Provider[]>("/providers")); } catch { setError("Could not refresh. Try again."); } }
   }
   async function select(mode: CliMode) {
     setBusy(true);

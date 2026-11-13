@@ -42,3 +42,40 @@ test("authenticated discovery selects the CLI mode through config", async () => 
     expect(calls.find(call => call.url === "/api/providers")?.init?.credentials).toBe("same-origin");
   } finally { globalThis.fetch = original; }
 });
+for (const outcome of ["Completed", "Action failed or cancelled. Retry."]) test(`action stream ${outcome} supports retry and completion`, async () => {
+ const {Onboarding} = await import("../src/client/Onboarding");
+ const {waitFor} = await import("@testing-library/react");
+ const original = globalThis.fetch; let posts = 0;
+ globalThis.fetch = (async (url:any) => {
+  if (String(url).endsWith("/control-session")) return Response.json({csrf:"fake"});
+  if (String(url).endsWith("/providers")) return Response.json([{id:"codex",state:posts && outcome === "Completed" ? "ready":"signin"}]);
+  posts++;
+  const data = JSON.stringify({text:"User code: ABCD-EFGH"})+"\n"+JSON.stringify({text:outcome});
+  return new Response(new ReadableStream({start(c){c.enqueue(new TextEncoder().encode(data.slice(0,7))); c.enqueue(new TextEncoder().encode(data.slice(7)));c.close();}}));
+ }) as typeof fetch;
+ try {
+  render(<Onboarding agentId="fake" onSelected={()=>{}}/>);
+  fireEvent.click(await screen.findByRole("button",{name:"Sign in"}));
+  await waitFor(()=>expect(screen.getByRole("status").textContent).toContain("ABCD-EFGH"));
+  if(outcome === "Completed") expect(await screen.findByRole("button",{name:"Use Codex"})).toBeTruthy();
+  else { expect(await screen.findByRole("alert")).toBeTruthy(); fireEvent.click(screen.getByRole("button",{name:"Sign in"})); await waitFor(()=>expect(posts).toBe(2)); }
+ } finally {globalThis.fetch=original;}
+});
+for (const cancel of [true,false]) test(`pending action aborts on ${cancel ? "Cancel":"unmount"}`, async () => {
+ const {Onboarding} = await import("../src/client/Onboarding");
+ const {waitFor} = await import("@testing-library/react");
+ const original = globalThis.fetch; let signal: AbortSignal | undefined;
+ globalThis.fetch = (async (url:any, init?:RequestInit) => {
+  if(String(url).endsWith("/control-session")) return Response.json({csrf:"fake"});
+  if(String(url).endsWith("/providers")) return Response.json([{id:"codex",state:"install"}]);
+  signal = init?.signal as AbortSignal;
+  return new Promise((_,reject)=>signal!.addEventListener("abort",()=>reject(Error("aborted"))));
+ }) as typeof fetch;
+ try {
+  const view = render(<Onboarding agentId="fake" onSelected={()=>{}}/>);
+  fireEvent.click(await screen.findByRole("button",{name:"Install"}));
+  await waitFor(()=>expect(signal).toBeTruthy());
+  if(cancel) fireEvent.click(screen.getByRole("button",{name:"Cancel"})); else view.unmount();
+  await waitFor(()=>expect(signal!.aborted).toBe(true));
+ } finally {globalThis.fetch=original;}
+});

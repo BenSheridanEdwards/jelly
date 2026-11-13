@@ -28,12 +28,13 @@ test("fake installer supports progress, failure, retry and cancellation", async 
  const {providerRuntimes} = await import("../src/server/providers");
  const script = join(home,"installer");
  await writeFile(script, '#!/bin/sh\nexit 1\n', {mode:0o755});
- const runtime = providerRuntimes({HOME:home,PATH:""}, undefined, false, () => [script]).codex;
+ const runtime = providerRuntimes({HOME:home,PATH:""}, undefined, false, id => [script,"install","-g",id === "codex" ? "@openai/codex":"@anthropic-ai/claude-code"]).codex;
  await expect(runtime.install()).rejects.toThrow();
- await writeFile(script, '#!/bin/sh\n/bin/mkdir -p "$HOME/.local/bin"\n/bin/echo "#!/bin/sh" > "$HOME/.local/bin/codex"\n/bin/chmod +x "$HOME/.local/bin/codex"\n');
+ await writeFile(script, '#!/bin/sh\nprintf \"%s\\n\" \"$*\" > \"$HOME/args\"\n/bin/mkdir -p "$HOME/.local/bin"\n/bin/echo "#!/bin/sh" > "$HOME/.local/bin/codex"\n/bin/chmod +x "$HOME/.local/bin/codex"\n');
  const progress: string[] = [];
  await runtime.install({onProgress: text => progress.push(text)});
  expect(progress.length).toBeGreaterThan(0);
+ expect(await Bun.file(join(home,"args")).text()).toBe("install -g @openai/codex\n");
  expect((await runtime.status()).path).toBe(join(home,".local/bin/codex"));
  await writeFile(script, '#!/bin/sh\nexec /bin/sleep 30\n');
  const controller = new AbortController();

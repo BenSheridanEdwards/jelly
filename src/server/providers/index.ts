@@ -81,19 +81,19 @@ export function providerRuntimes(env: NodeJS.ProcessEnv = process.env, claude = 
       options.signal?.addEventListener("abort", abort, {once:true});
       const timer = setTimeout(abort, 15 * 60 * 1000);
       const read = async (stream: ReadableStream<Uint8Array>) => {
-        // Only publish device instructions; arbitrary CLI output may contain credentials.
         let pending = "";
+        const decoder = new TextDecoder();
+        const publish = (line: string) => {
+          if (/token|secret|password|authorization|bearer|sk-|credential|cookie/i.test(line)) return;
+          options.onProgress?.(line.replace(/https?:\/\/[^\s]+/g, url => url.split(/[?#]/)[0]!).slice(0,4096));
+        };
         const reader = stream.getReader();
         for (;;) {
-          const {done, value:chunk} = await reader.read(); if (done) break;
-          pending += new TextDecoder().decode(chunk);
-          const lines = pending.split(/\r?\n/); pending = lines.pop()!.slice(-4096);
-          for (const line of lines) {
-            const url = line.match(/https:\/\/(?:auth.openai.com\/codex\/device|claude.ai\/oauth\/authorize)(?=[\s?]|$)/)?.[0];
-            if (url) options.onProgress?.(url);
-            const code = line.match(/(?:user code|device code|code:)\s*([A-Z0-9]{4}-[A-Z0-9]{4})\b/i)?.[1];
-            if (code) options.onProgress?.(`User code: ${code}`);
-          }
+          const {done, value} = await reader.read();
+          pending += decoder.decode(value, {stream:!done});
+          const lines = pending.split(/\r?\n/); pending = lines.pop()!;
+          for (const line of lines) publish(line);
+          if (done) { if (pending) publish(pending); break; }
         }
       };
       options.onProgress?.(install ? "Installing provider…" : "Waiting for sign-in…");
