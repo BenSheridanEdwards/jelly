@@ -1,5 +1,5 @@
 import type { ModelId, Effort } from "./models";
-export type Mode = "auto" | "chatgpt" | "api" | "claude-code";
+export type Mode = "auto" | "chatgpt" | "api" | "claude-code" | "codex-cli";
 export type Status = "idle" | "running" | "waiting" | "error" | "interrupted";
 export type MessageMode = "queue" | "steer";
 export interface PendingMessage {

@@ -25,6 +25,9 @@ const credentials = {
 };
 async function fixture(login?: ChatGPTLogin, ttl = 10000) {
   const dir = resolve(mkdtempSync(join(tmpdir(), "jelly-connections-")));
+  const previousHome = process.env.HOME;
+  process.env.HOME = dir;
+  cleanups.push(() => { process.env.HOME = previousHome; });
   const app = await startApp({ claudeStatusCheck: unavailableClaudeStatus,
     dataDir: dir,
     configDir: join(dir, "config"),
@@ -337,4 +340,19 @@ test("auto never spends an API key and codex-cli stays unavailable until its run
   await h.auth.saveKey(key);
   expect(h.config("auto").activeMode).not.toBe("api");
   expect(h.config("codex-cli" as any).ready).toBe(false);
+});
+
+test("auto prefers discovered subscription CLIs and never executes the unfinished Codex runtime", async () => {
+  const f = await fixture();
+  const { app } = f;
+  const h = app.service.harness;
+  h.providers = [{ id: "codex", state: "ready", version: "1.0", path: "/fake/codex" }];
+  expect(h.config("auto").activeMode).toBe("codex-cli");
+  expect(h.config("auto").ready).toBe(false);
+  h.claude.status = () => ({ claudeReady: true, claudeNotice: "ready" });
+  expect(h.config("auto").activeMode).toBe("claude-code");
+  h.refreshProviders = async () => {};
+  const response = await fetch(new URL("/api/providers", app.server.url), { headers: await f.session() });
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual(h.providers);
 });

@@ -44,6 +44,7 @@ async function setup(extra: Partial<Parameters<typeof startApp>[0]> = {}) {
     ...extra,
   });
   app.service.setMode("api");
+  for (const agent of app.store.agents()) app.service.setConfig({ agentId: agent.id, mode: "api" });
   const origin = `http://127.0.0.1:${app.server.port}`;
   let cookie = "";
   globalThis.fetch = (async (input: any, init: any) => {
@@ -477,6 +478,7 @@ test("sudo approval card submits privately, clears its input, and reflects the c
   try {
     server.service.setMode("api");
     const id = server.store.agents()[0]!.id;
+    server.service.setConfig({ agentId: id, mode: "api" });
     server.service.start(id, crypto.randomUUID(), "/fixture sudo");
     await waitFor(() => expect(server.store.interventions()).toHaveLength(1));
     const item = server.store.interventions()[0]!;

@@ -148,6 +148,7 @@ export async function startApp(options: AppOptions) {
     // One bounded check on startup makes restored Claude agents ready without
     // visiting Settings. Snapshots remain synchronous and never spawn probes.
     await harness.claude.refresh();
+    if (!options.claudeStatusCheck) await harness.refreshProviders();
     await harness.runtime.refresh({ providers: ["claude-code"], allowNetwork: false });
     const service = new JellyService(store, harness, options);
     cleanup = () => service.close();
@@ -288,6 +289,10 @@ export async function startApp(options: AppOptions) {
                   headers,
                 },
               );
+            }
+            if (req.method === "GET" && url.pathname === "/api/providers") {
+              await harness.refreshProviders();
+              return Response.json(harness.providers);
             }
             if (req.method === "GET" && url.pathname === "/api/chrome/share/socket") {
               if (!origin || !allowed.has(origin)) throw new HttpError(403, "A same-origin browser is required.");
@@ -748,7 +753,7 @@ export async function startApp(options: AppOptions) {
               const input = await body(req);
               if (
                 input.mode !== undefined &&
-                !["auto", "chatgpt", "api", "claude-code"].includes(String(input.mode))
+                !["auto", "chatgpt", "api", "claude-code", "codex-cli"].includes(String(input.mode))
               )
                 throw new HttpError(400, "Unknown connection mode.");
               if (
