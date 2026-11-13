@@ -87,3 +87,26 @@ test("connections offer explicit recheck", async () => {
  try { render(<Onboarding agentId="fake" onSelected={()=>{}}/>); expect(await screen.findByRole("button",{name:"Recheck CLI sessions"})).toBeTruthy(); }
  finally {globalThis.fetch=original;}
 });
+
+for (const [id, mode, label] of [["claude", "claude-code", "Claude"], ["codex", "codex-cli", "Codex"]] as const) test(`${label} Settings rechecks, reconnects and disconnects Jelly only`, async () => {
+ const { Settings } = await import("../src/client/Settings");
+ const { waitFor } = await import("@testing-library/react");
+ const original = globalThis.fetch; const calls: string[] = []; let ready = true;
+ globalThis.fetch = (async (url: any, init?: RequestInit) => {
+  calls.push(`${init?.method ?? "GET"} ${url}`);
+  return Response.json(String(url).endsWith("/control-session") ? {csrf:"test"} : String(url).endsWith("/providers") ? [{id,state:ready ? "ready":"signin",path:`/fake/${id}`}] : {});
+ }) as typeof fetch;
+ try {
+  const config = {mode:"auto",selectedModel:"gpt-6-astra",effort:"medium"};
+  render(<Settings data={{config,agents:[],instance:{}} as any} theme="system" setTheme={()=>{}} onClose={()=>{}} refresh={async()=>{}}/>);
+  fireEvent.click(screen.getByRole("button",{name:`${label} subscription`}));
+  fireEvent.click(await screen.findByRole("button",{name:"Reconnect Jelly"}));
+  await waitFor(()=>expect(calls).toContain(`POST /api/providers/${id}/reconnect`));
+  fireEvent.click(screen.getByRole("button",{name:"Disconnect Jelly"}));
+  await waitFor(()=>expect(calls).toContain(`POST /api/providers/${id}/disconnect`));
+  ready = false; fireEvent.click(screen.getByRole("button",{name:"Recheck CLI sessions"}));
+  expect(await screen.findByRole("button",{name:"Sign in"})).toBeTruthy();
+  expect(calls.filter(call=>call === "GET /api/providers").length).toBeGreaterThan(1);
+  expect(calls.some(call=>/logout|\/config/.test(call))).toBe(false);
+ } finally {globalThis.fetch=original;}
+});
