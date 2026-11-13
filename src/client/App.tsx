@@ -1,3 +1,4 @@
+import { Onboarding } from "./Onboarding";
 import { HumanTodos, AgentNeedsYou, HumanTodoActivity, openAgentTodos } from "./HumanTodos";
 import { AppRegistration } from "./AppRegistration";
 import { SchedulesPanel, ScheduledMessage, ScheduleNotice } from "./Schedules";
@@ -1906,6 +1907,7 @@ function AgentsWorkspace({ active, destinationReady, explicitAgentId, explicitNa
           </button>
         )}
         <div className="composer-wrap">
+          {data && !connectionReady && agent && <Onboarding key={agent.id} agentId={agent.id} onSelected={() => void refresh.current()} />}
           {data && !connectionReady && (
             <div className="connection-required" role="status">
               <span>{selectedConfig?.notice}</span>
