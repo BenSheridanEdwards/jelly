@@ -70,6 +70,8 @@ export function Onboarding({ agentId, onSelected }: { agentId: string; onSelecte
     finally { setBusy(false); }
   }
   return <fieldset disabled={busy} style={{ border: 0, margin: 0, minWidth: 0 }}>
+    
+    <button type="button" onClick={() => void api<Provider[]>("/providers").then(setProviders).catch(() => setError("Could not refresh. Try again."))}>Recheck CLI sessions</button>
     <OnboardingCards providers={providers} onUse={mode => void select(mode)} onAction={provider => void act(provider)} />
     {action && <button type="button" onClick={() => action.abort()}>Cancel</button>}
     {progress && <pre role="status">{progress}</pre>}

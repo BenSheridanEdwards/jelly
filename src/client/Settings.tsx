@@ -1,6 +1,7 @@
 import { useId, useState, type ReactNode } from "react";
 import { ChevronRight, Check } from "lucide-react";
 import { Modal } from "./Modal";
+import { Onboarding } from "./Onboarding";
 import { Connections } from "./Connections";
 import { FirecrawlConnection } from "./FirecrawlConnection";
 import { ComputerControlPanel } from "./ComputerControlPanel";
@@ -118,7 +119,7 @@ export function Settings({
     {
       id: "auto" as const,
       label: "Automatic",
-      detail: "Use your connected ChatGPT subscription, or an OpenAI API key.",
+      detail: "Use a ready Claude, ChatGPT or Codex subscription.",
     },
     {
       id: "chatgpt" as const,
@@ -240,6 +241,7 @@ export function Settings({
                 value={data.config.chatgptReady ? "Connected" : "Not connected"}
                 onClick={() => setPage("ChatGPT")}
               />
+              <SettingsRow label="Codex subscription" value="Check CLI session" onClick={() => setPage("Codex subscription")} />
               <SettingsRow label="Claude subscription" value={data.config.claudeReady ? "Ready" : "Setup required"} onClick={() => setPage("Claude subscription")} />
               <SettingsRow
                 label="OpenAI API"
@@ -322,7 +324,8 @@ export function Settings({
           onChange={(next) => { setMode(next); if (!modelsForMode(next).some(option => option.id === model)) setModel(defaultModelForMode(next)); }}
         />
       )}
-      {(page === "ChatGPT" || page === "OpenAI API" || page === "Claude subscription") && (
+      {(page === "Claude subscription" || page === "Codex subscription") && <Onboarding agentId={data.agents[0]?.id ?? ""} onSelected={() => void refresh()} />}
+      {(page === "ChatGPT" || page === "OpenAI API") && (
         <Connections
           onDirty={setDetailDirty}
           only={page === "Claude subscription" ? "claude-code" : page === "ChatGPT" ? "chatgpt" : "api"}
