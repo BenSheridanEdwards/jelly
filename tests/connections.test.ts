@@ -362,3 +362,11 @@ test("auto ranks Claude above ChatGPT above ready Codex", async () => {
   expect(response.status).toBe(200);
   expect(await response.json()).toEqual(h.providers);
 });
+for (const provider of ["claude","codex"]) for (const action of ["signin","install"]) {
+ test(`${provider} ${action} rejects unauthenticated and CSRF-missing POST`, async () => {
+  const f = await fixture(), headers = await f.session();
+  const post = (headers: Record<string,string>) => fetch(new URL(`/api/providers/${provider}/${action}`,f.app.server.url),{method:"POST",headers});
+  expect((await post({})).status).toBe(401);
+  expect((await post({cookie:headers.cookie})).status).toBe(403);
+ });
+}
