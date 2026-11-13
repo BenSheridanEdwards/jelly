@@ -30,5 +30,6 @@ export async function startApp(options: AppOptions & FixtureOptions) {
   });
   useTestModel(app.service.harness, options);
   app.service.setMode("api");
+  for (const agent of app.store.agents()) app.service.setConfig({ agentId: agent.id, mode: "api" });
   return app;
 }
