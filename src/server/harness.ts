@@ -113,7 +113,7 @@ export class Harness {
     const { claudeReady, claudeNotice } = this.claude.status();
     const activeMode =
       mode === "auto"
-        ? claudeReady ? "claude-code" : this.providers.some(p => p.id === "codex" && p.state === "ready") ? "codex-cli" : chatgptReady ? "chatgpt" : null
+        ? claudeReady ? "claude-code" : chatgptReady ? "chatgpt" : this.providers.some(p => p.id === "codex" && p.state === "ready") ? "codex-cli" : null
         : mode;
     const ready = activeMode === "claude-code" ? claudeReady : activeMode === "chatgpt" ? chatgptReady : activeMode === "api" && apiReady;
     const provider = activeMode === "claude-code" ? "claude-code" : activeMode === "chatgpt" ? "openai-codex" : activeMode === "api" ? "openai" : "";

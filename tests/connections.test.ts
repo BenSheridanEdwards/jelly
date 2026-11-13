@@ -343,13 +343,16 @@ test("auto never spends an API key and codex-cli stays unavailable until its run
   expect(h.config("codex-cli" as any).ready).toBe(false);
 });
 
-test("auto prefers discovered subscription CLIs and never executes the unfinished Codex runtime", async () => {
+test("auto prefers ChatGPT over discovered but unrunnable Codex and keeps Codex-only unavailable", async () => {
   const f = await fixture();
   const { app } = f;
   const h = app.service.harness;
   h.providers = [{ id: "codex", state: "ready", version: "1.0", path: "/fake/codex" }];
   expect(h.config("auto").activeMode).toBe("codex-cli");
   expect(h.config("auto").ready).toBe(false);
+  h.auth.hasAuth = () => true;
+  expect(h.config("auto").activeMode).toBe("chatgpt");
+  expect(h.config("auto").ready).toBe(true);
   h.claude.status = () => ({ claudeReady: true, claudeNotice: "ready" });
   expect(h.config("auto").activeMode).toBe("claude-code");
   h.refreshProviders = async () => {};
