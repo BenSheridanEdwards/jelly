@@ -56,7 +56,7 @@ export function createCodexProvider(status: () => ProviderStatus | undefined) {
                   phase = send("turn/start", { threadId, input: [{ type: "text", text }] });
                 } else if (!threadId) {
                   send("initialized", {}, false);
-                  phase = send("thread/start", { model: model.id, approvalPolicy: "never", sandbox: "workspace-write", baseInstructions: getCurrentSystemPrompt(context.messages) });
+                  phase = send("thread/start", { model: model.id, approvalPolicy: "never", sandbox: "read-only", baseInstructions: getCurrentSystemPrompt(context.messages) });
                 }
               }
               if (value.method === "item/agentMessage/delta") {

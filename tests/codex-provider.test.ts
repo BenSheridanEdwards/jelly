@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { mkdtemp, writeFile, chmod, rm } from "node:fs/promises";
+import { mkdtemp, writeFile, readFile, chmod, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createCodexProvider } from "../src/server/codex-provider";
@@ -17,7 +17,10 @@ for await (const line of console) {
  const emit = x => console.log(JSON.stringify(x));
  if (r.method === 'initialize') emit({id:r.id,result:{}});
  else if (r.method === 'initialized') initialized = true;
- else if (r.method === 'thread/start' && initialized) emit({id:r.id,result:{thread:{id:'thread'}}});
+ else if (r.method === 'thread/start' && initialized) {
+  await Bun.write(${JSON.stringify(join(dir, 'thread-start.json'))}, JSON.stringify(r.params));
+  emit({id:r.id,result:{thread:{id:'thread'}}});
+ }
  else if (r.method === 'turn/start') {
   emit({id:r.id,result:{turn:{id:'turn'}}});
   for (const delta of ['Hello', ' world']) {
@@ -41,5 +44,9 @@ for await (const line of console) {
     }
     expect(deltas).toEqual(["Hello", " world"]);
     expect(completed).toBe(true);
+    const params = JSON.parse(await readFile(join(dir, "thread-start.json"), "utf8"));
+    expect(params.sandbox).toBe("read-only");
+    expect(params.approvalPolicy).toBe("never");
+    expect(params.cwd).toBeUndefined();
   } finally { await rm(dir, { recursive: true }); }
 });
