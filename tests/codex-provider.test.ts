@@ -6,6 +6,8 @@ import { createCodexProvider } from "../src/server/codex-provider";
 
 test("Codex JSONL streams incremental agent text before completion", async () => {
   const dir = await mkdtemp(resolve(tmpdir(), "jelly-codex-"));
+  const savedHome = process.env.HOME;
+  process.env.HOME = dir;
   try {
     const path = join(dir, "codex");
     await writeFile(path, `#!/usr/bin/env bun
@@ -48,7 +50,10 @@ for await (const line of console) {
     expect(params.sandbox).toBe("read-only");
     expect(params.approvalPolicy).toBe("never");
     expect(params.cwd).toBeUndefined();
-  } finally { await rm(dir, { recursive: true }); }
+  } finally {
+    if (savedHome === undefined) delete process.env.HOME; else process.env.HOME = savedHome;
+    await rm(dir, { recursive: true });
+  }
 });
 
 for (const interrupt of [false, true]) test(interrupt ? "interrupt waits for stopped completion" : "second turn resumes existing conversation", async () => {
@@ -93,7 +98,7 @@ for await (const line of console) {
     if (interrupt) {
       expect(requests.find(r => r.method === "turn/interrupt")?.params).toEqual({ threadId: "thread", turnId: "turn" });
       expect(terminal.reason).toBe("aborted");
-      expect(terminal.error.errorMessage).not.toContain("Codex turn failed");
+      expect(terminal.error.errorMessage ?? "").not.toContain("Codex turn failed");
     } else {
       expect(requests.filter(r => r.method.startsWith("thread/")).map(r => r.method)).toEqual(["thread/start", "thread/resume"]);
       expect(terminal.type).toBe("done");
