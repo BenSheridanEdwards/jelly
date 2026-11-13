@@ -70,3 +70,15 @@ case "$*" in
    await expect(pending).rejects.toThrow("Cancelled");
  }
 });
+
+test("progress includes safe final stdout and stderr without credentials", async () => {
+ const home = resolve(await mkdtemp(join(tmpdir(), "jelly-progress-")));
+ const script = join(home,"fake");
+ await writeFile(script, '#!/bin/sh\nprintf "Downloading package"\nprintf "Checking package" >&2\nprintf "\\naccess_token=private-secret"\n', {mode:0o755});
+ const {providerRuntimes} = await import("../src/server/providers");
+ const progress: string[] = [];
+ await providerRuntimes({HOME:home,PATH:""},undefined,false,()=>[script]).codex.install({onProgress:t=>progress.push(t)});
+ expect(progress.join("\n")).toContain("Downloading package");
+ expect(progress.join("\n")).toContain("Checking package");
+ expect(progress.join("\n")).not.toContain("private-secret");
+});

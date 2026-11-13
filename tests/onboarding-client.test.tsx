@@ -15,8 +15,10 @@ test("ready subscription sessions show versions and select their exact provider"
 });
 for (const [state,label] of [["install","Install"],["signin","Sign in"],["error","Retry"]] as const) {
   test(`${state} offers an action`, () => {
-    render(<OnboardingCards providers={[{id:"claude",state}]} onUse={() => {throw Error("unexpected action");}} />);
-    expect(screen.getByRole("button", {name:label})).toBeTruthy();
+    const actions: string[] = [];
+    render(<OnboardingCards onAction={p => actions.push(p.state)} providers={[{id:"claude",state}]} onUse={() => {throw Error("unexpected action");}} />);
+    fireEvent.click(screen.getByRole("button", {name:label}));
+    expect(actions).toEqual([state]);
     expect(screen.queryByRole("button",{name:"Use Claude Code"})).toBeNull();
   });
 }
