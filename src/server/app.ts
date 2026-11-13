@@ -1,3 +1,4 @@
+import { providerRuntimes } from "./providers";
 import { closeBrowserRepl } from "./agent-tools";
 import type { ClaudeStatusCheck } from "./claude-code";
 import "./runtime-network";
@@ -289,6 +290,23 @@ export async function startApp(options: AppOptions) {
                   headers,
                 },
               );
+            }
+            const providerAction = url.pathname.match(/^\/api\/providers\/(claude|codex)\/(signin|install)$/);
+            if (req.method === "POST" && providerAction) {
+              const runtime = providerRuntimes()[providerAction[1] as "claude" | "codex"];
+              const encoder = new TextEncoder();
+              const controller = new AbortController();
+              req.signal.addEventListener("abort", () => controller.abort(), {once:true});
+              const stream = new ReadableStream({
+                start(output) {
+                  const send = (text: string) => { if (!controller.signal.aborted) output.enqueue(encoder.encode(JSON.stringify({text}) + "\n")); };
+                  void runtime[providerAction[2] === "install" ? "install" : "signIn"]({signal:controller.signal, onProgress:send})
+                    .then(() => send("Completed"), () => send("Action failed or cancelled. Retry."))
+                    .finally(() => { if (!controller.signal.aborted) output.close(); });
+                },
+                cancel() { controller.abort(); },
+              });
+              return new Response(stream, {headers:{"Content-Type":"application/x-ndjson", "Cache-Control":"no-store"}});
             }
             if (req.method === "GET" && url.pathname === "/api/providers") {
               await harness.refreshProviders();

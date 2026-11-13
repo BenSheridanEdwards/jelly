@@ -3,6 +3,7 @@ import { constants } from "node:fs";
 import { join } from "node:path";
 import { ClaudeCodeConnection } from "../claude-code";
 
+export type ActionOptions = { signal?: AbortSignal; onProgress?: (text: string) => void };
 export type ProviderId = "claude" | "codex";
 export interface ProviderStatus {
   id: ProviderId;
@@ -13,7 +14,8 @@ export interface ProviderStatus {
 export interface ProviderRuntime {
   discover(): Promise<ProviderStatus>;
   status(): Promise<ProviderStatus>;
-  signIn(): Promise<void>;
+  signIn(options?: ActionOptions): Promise<void>;
+  install(options?: ActionOptions): Promise<void>;
   start(): Promise<void>;
   resume(): Promise<void>;
   stop(): Promise<void>;
@@ -51,7 +53,7 @@ async function binary(id: ProviderId, env: NodeJS.ProcessEnv, systemPaths: boole
     try { await access(path, constants.X_OK); return path; } catch { /* Try next location. */ }
   }
 }
-export function providerRuntimes(env: NodeJS.ProcessEnv = process.env, claude = new ClaudeCodeConnection(), systemPaths = true): Record<ProviderId, ProviderRuntime> {
+export function providerRuntimes(env: NodeJS.ProcessEnv = process.env, claude = new ClaudeCodeConnection(), systemPaths = true, installer?: (id: ProviderId) => string[]): Record<ProviderId, ProviderRuntime> {
   const unsupported = async () => { throw new Error("Provider action is not implemented yet"); };
   const create = (id: ProviderId): ProviderRuntime => {
     const status = async (): Promise<ProviderStatus> => {
@@ -59,8 +61,8 @@ export function providerRuntimes(env: NodeJS.ProcessEnv = process.env, claude = 
       if (!path) return { id, state: "install" };
       try {
         if (id === "claude") {
-          const result = await claude.refresh();
-          return { id, path, state: result.claudeReady ? "ready" : "signin" };
+          const result = await run(path, ["auth", "status"], env);
+          return { id, path, state: result.code === 0 && /"loggedIn"\s*:\s*true/.test(result.text) ? "ready" : "signin" };
         }
         const versionResult = await run(path, ["--version"], env);
         const version = versionResult.text.match(/codex-cli\s+(\S+)/)?.[1];
@@ -69,7 +71,39 @@ export function providerRuntimes(env: NodeJS.ProcessEnv = process.env, claude = 
         return { id, path, version, state: auth.code === 0 && /Logged in using ChatGPT/i.test(auth.text) ? "ready" : "signin" };
       } catch { return { id, path, state: "error" }; }
     };
-    return { discover: status, status, signIn: unsupported, start: unsupported, resume: unsupported, stop: unsupported };
+    const action = async (install: boolean, options: ActionOptions = {}) => {
+      if (options.signal?.aborted) throw new Error("Cancelled");
+      const path = install ? undefined : await binary(id, env, systemPaths);
+      if (!install && !path) throw new Error("Provider is not installed");
+      const command = install ? installer?.(id) ?? ["npm", "install", "-g", id === "claude" ? "@anthropic-ai/claude-code" : "@openai/codex"] : [path!, ...(id === "claude" ? ["auth", "login"] : ["login", "--device-auth"])];
+      const child = Bun.spawn(command, {env, stdout:"pipe", stderr:"pipe"});
+      const abort = () => child.kill();
+      options.signal?.addEventListener("abort", abort, {once:true});
+      const timer = setTimeout(abort, 15 * 60 * 1000);
+      const read = async (stream: ReadableStream<Uint8Array>) => {
+        // Only publish device instructions; arbitrary CLI output may contain credentials.
+        let pending = "";
+        const reader = stream.getReader();
+        for (;;) {
+          const {done, value:chunk} = await reader.read(); if (done) break;
+          pending += new TextDecoder().decode(chunk);
+          const lines = pending.split(/\r?\n/); pending = lines.pop()!.slice(-4096);
+          for (const line of lines) {
+            const url = line.match(/https:\/\/(?:auth.openai.com\/codex\/device|claude.ai\/oauth\/authorize)(?=[\s?]|$)/)?.[0];
+            if (url) options.onProgress?.(url);
+            const code = line.match(/(?:user code|device code|code:)\s*([A-Z0-9]{4}-[A-Z0-9]{4})\b/i)?.[1];
+            if (code) options.onProgress?.(`User code: ${code}`);
+          }
+        }
+      };
+      options.onProgress?.(install ? "Installing provider…" : "Waiting for sign-in…");
+      try {
+        const [code] = await Promise.all([child.exited, read(child.stdout), read(child.stderr)]);
+        if (options.signal?.aborted) throw new Error("Cancelled");
+        if (code !== 0) throw new Error("Provider action failed. Retry.");
+      } finally { clearTimeout(timer); options.signal?.removeEventListener("abort", abort); }
+    };
+    return { discover: status, status, signIn: options => action(false, options), install: options => action(true, options), start: unsupported, resume: unsupported, stop: unsupported };
   };
   return { claude: create("claude"), codex: create("codex") };
 }
