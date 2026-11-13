@@ -1,3 +1,4 @@
+import { claudeEnvironment } from "./providers";
 import {
   getClaudeStatus,
   type ClaudeStatus,
@@ -19,8 +20,8 @@ export class ClaudeCodeConnection {
   private checkedAt = 0;
   private pending?: Promise<ClaudeReadiness>;
   constructor(
-    private readonly check: ClaudeStatusCheck = () =>
-      getClaudeStatus(process.env, AbortSignal.timeout(5000)),
+    private readonly check: ClaudeStatusCheck = async () =>
+      getClaudeStatus(await claudeEnvironment(), AbortSignal.timeout(5000)),
     private readonly environment: () => NodeJS.ProcessEnv = () => process.env,
   ) {}
   status(): ClaudeReadiness {
@@ -46,7 +47,7 @@ export class ClaudeCodeConnection {
   }
   refresh(force = false): Promise<ClaudeReadiness> {
     if (this.pending) return this.pending;
-    if (Date.now() - this.checkedAt < (force ? 1000 : 60000))
+    if (Date.now() - this.checkedAt < (force ? 0 : 60000))
       return Promise.resolve(this.status());
     this.pending = (async () => {
       try {

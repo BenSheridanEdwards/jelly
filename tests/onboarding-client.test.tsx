@@ -36,6 +36,7 @@ test("authenticated discovery selects the CLI mode through config", async () => 
     render(<Onboarding agentId="agent" onSelected={() => {selected = true;}} />);
     fireEvent.click(await screen.findByRole("button", {name:"Use Codex"}));
     await waitFor(() => expect(selected).toBe(true));
+    expect(calls.find(call => call.url === "/api/providers/codex/reconnect")?.init?.method).toBe("POST");
     const config = calls.find(call => call.url === "/api/config")!;
     expect(config.init?.method).toBe("PUT");
     expect(JSON.parse(config.init?.body as string)).toEqual({agentId:"agent",mode:"codex-cli"});
@@ -77,5 +78,41 @@ for (const cancel of [true,false]) test(`pending action aborts on ${cancel ? "Ca
   await waitFor(()=>expect(signal).toBeTruthy());
   if(cancel) fireEvent.click(screen.getByRole("button",{name:"Cancel"})); else view.unmount();
   await waitFor(()=>expect(signal!.aborted).toBe(true));
+ } finally {globalThis.fetch=original;}
+});
+
+test("connections offer explicit recheck", async () => {
+ const {Onboarding} = await import("../src/client/Onboarding");
+ const original = globalThis.fetch;
+ globalThis.fetch = (async () => Response.json([{id:"codex",state:"ready"}])) as unknown as typeof fetch;
+ try { render(<Onboarding agentId="fake" onSelected={()=>{}}/>); expect(await screen.findByRole("button",{name:"Recheck CLI sessions"})).toBeTruthy(); }
+ finally {globalThis.fetch=original;}
+});
+
+for (const [id, mode, label] of [["claude", "claude-code", "Claude"], ["codex", "codex-cli", "Codex"]] as const) test(`${label} Settings rechecks, reconnects and disconnects Jelly only`, async () => {
+ const { Settings } = await import("../src/client/Settings");
+ const { waitFor } = await import("@testing-library/react");
+ const original = globalThis.fetch; const calls: string[] = []; const saved: any[] = []; let ready = true;
+ globalThis.fetch = (async (url: any, init?: RequestInit) => {
+  calls.push(`${init?.method ?? "GET"} ${url}`);
+  if (String(url).endsWith("/config")) saved.push(JSON.parse(init!.body as string));
+  return Response.json(String(url).endsWith("/control-session") ? {csrf:"test"} : String(url).endsWith("/providers") ? [{id,state:ready ? "ready":"signin",path:`/fake/${id}`}] : {});
+ }) as typeof fetch;
+ try {
+  const config = {mode:"auto",selectedModel:"gpt-6-astra",effort:"medium"};
+  render(<Settings data={{config,agents:[],instance:{}} as any} theme="system" setTheme={()=>{}} onClose={()=>{}} refresh={async()=>{}}/>);
+  fireEvent.click(screen.getByRole("button",{name:`${label} subscription`}));
+  fireEvent.click(await screen.findByRole("button",{name:"Reconnect Jelly"}));
+  await waitFor(()=>expect(calls).toContain(`POST /api/providers/${id}/reconnect`));
+  await waitFor(()=>expect(calls.filter(call=>call === "GET /api/providers").length).toBeGreaterThanOrEqual(4));
+  fireEvent.click(screen.getByRole("button",{name:"Save settings"}));
+  await waitFor(()=>expect(saved.at(-1)?.mode).toBe(mode));
+  fireEvent.click(screen.getByRole("button",{name:"Disconnect Jelly"}));
+  await waitFor(()=>expect(calls).toContain(`POST /api/providers/${id}/disconnect`));
+  ready = false; fireEvent.click(screen.getByRole("button",{name:"Recheck CLI sessions"}));
+  expect(await screen.findByRole("button",{name:"Sign in"})).toBeTruthy();
+  expect(calls.filter(call=>call === "GET /api/providers").length).toBeGreaterThan(1);
+  expect(calls.some(call=>/logout/.test(call))).toBe(false);
+  expect(saved[0].agentId).toBeUndefined();
  } finally {globalThis.fetch=original;}
 });

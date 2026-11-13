@@ -57,9 +57,10 @@ export const DEFAULT_MODEL: ModelId = "gpt-6-astra";
 export const DEFAULT_EFFORT: Effort = "medium";
 
 export const MODE_OPTIONS = [
-  { id: "auto", label: "Automatic (ChatGPT / OpenAI API)" },
+  { id: "auto", label: "Automatic (Claude / ChatGPT / Codex)" },
   { id: "chatgpt", label: "ChatGPT" },
   { id: "claude-code", label: "Claude subscription" },
+  { id: "codex-cli", label: "Codex subscription" },
   { id: "api", label: "OpenAI API" },
 ] as const;
 export function modelsForMode(mode: string) {

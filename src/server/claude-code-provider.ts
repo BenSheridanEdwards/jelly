@@ -1,3 +1,4 @@
+import { claudeEnvironment } from "./providers";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { createClaudeCodeProvider } from "@earendil-works/pi-claude-code/src/index.ts";
 import {
@@ -98,11 +99,12 @@ export function createJellyClaudeProvider(
         },
         async resolve(input: Parameters<typeof apiKey.resolve>[0]) {
           const result = await apiKey.resolve(input);
+          const env = await claudeEnvironment({ ...process.env, ...result?.env });
           await requireSubscription(
-            { ...process.env, ...result?.env },
+            env,
             input.signal,
           );
-          return result;
+          return result ? { ...result, env: { ...result.env, ...(env.PI_CLAUDE_CODE_COMMAND ? { PI_CLAUDE_CODE_COMMAND: env.PI_CLAUDE_CODE_COMMAND } : {}) } } : undefined;
         },
       },
       // Keep upstream subscription metadata without allowing a stored marker
@@ -110,7 +112,7 @@ export function createJellyClaudeProvider(
       oauth: {
         ...oauth,
         async toAuth(credential: Parameters<typeof oauth.toAuth>[0]) {
-          await requireSubscription(process.env);
+          await requireSubscription(await claudeEnvironment());
           return oauth.toAuth(credential);
         },
       },

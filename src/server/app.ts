@@ -291,6 +291,20 @@ export async function startApp(options: AppOptions) {
                 },
               );
             }
+            const binding = url.pathname.match(/^\/api\/providers\/(claude|codex)\/(disconnect|reconnect)$/);
+            if (req.method === "POST" && binding) {
+              const id = binding[1]!, connected = binding[2] === "reconnect";
+              const mode = id === "claude" ? "claude-code" : "codex-cli";
+              if (connected) {
+                await harness.refreshProviders();
+                if (!harness.providers.some(p => p.id === id && p.state === "ready")) throw new HttpError(409, "Recheck the CLI session and complete setup first.");
+              }
+              const affected = store.agents().filter(a => service.snapshot(a.id).agentConfig?.activeMode === mode);
+              harness.setCliConnected(id, connected);
+              if (!connected) await Promise.all(affected.map(a => service.stop(a.id)));
+              if (connected || store.instance().mode === mode) service.setMode(connected ? mode : "auto");
+              return json(service.snapshot().config);
+            }
             const providerAction = url.pathname.match(/^\/api\/providers\/(claude|codex)\/(signin|install)$/);
             if (req.method === "POST" && providerAction) {
               const runtime = providerRuntimes()[providerAction[1] as "claude" | "codex"];
@@ -310,7 +324,7 @@ export async function startApp(options: AppOptions) {
             }
             if (req.method === "GET" && url.pathname === "/api/providers") {
               await harness.refreshProviders();
-              return Response.json(harness.providers);
+              return Response.json(harness.providers.map(p => ({ ...p, disconnected: !harness.cliConnected(p.id) })));
             }
             if (req.method === "GET" && url.pathname === "/api/chrome/share/socket") {
               if (!origin || !allowed.has(origin)) throw new HttpError(403, "A same-origin browser is required.");

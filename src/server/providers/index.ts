@@ -1,7 +1,7 @@
 import { access, readdir } from "node:fs/promises";
 import { constants } from "node:fs";
 import { join } from "node:path";
-import { ClaudeCodeConnection } from "../claude-code";
+import { getClaudeStatus, resolveClaudeExecutable } from "@earendil-works/pi-claude-code/src/claude-cli.ts";
 
 export type ActionOptions = { signal?: AbortSignal; onProgress?: (text: string) => void };
 export type ProviderId = "claude" | "codex";
@@ -10,6 +10,7 @@ export interface ProviderStatus {
   state: "install" | "signin" | "ready" | "error";
   version?: string;
   path?: string;
+  disconnected?: boolean;
 }
 export interface ProviderRuntime {
   discover(): Promise<ProviderStatus>;
@@ -31,6 +32,7 @@ async function run(path: string, args: string[], env: NodeJS.ProcessEnv) {
   } finally { clearTimeout(timer); }
 }
 async function binary(id: ProviderId, env: NodeJS.ProcessEnv, systemPaths: boolean) {
+  if (id === "claude" && env.PI_CLAUDE_CODE_COMMAND) return resolveClaudeExecutable(env);
   const home = env.HOME || "";
   const dirs = (env.PATH || "").split(":");
   for (const relative of [".local/bin", ".npm-global/bin", ".npm/bin", ".volta/bin", ".local/share/mise/shims", ".local/share/mise/installs/node"]) {
@@ -53,7 +55,7 @@ async function binary(id: ProviderId, env: NodeJS.ProcessEnv, systemPaths: boole
     try { await access(path, constants.X_OK); return path; } catch { /* Try next location. */ }
   }
 }
-export function providerRuntimes(env: NodeJS.ProcessEnv = process.env, claude = new ClaudeCodeConnection(), systemPaths = true, installer?: (id: ProviderId) => string[]): Record<ProviderId, ProviderRuntime> {
+export function providerRuntimes(env: NodeJS.ProcessEnv = process.env, _claude?: unknown, systemPaths = true, installer?: (id: ProviderId) => string[]): Record<ProviderId, ProviderRuntime> {
   const unsupported = async () => { throw new Error("Provider action is not implemented yet"); };
   const create = (id: ProviderId): ProviderRuntime => {
     const status = async (): Promise<ProviderStatus> => {
@@ -61,8 +63,8 @@ export function providerRuntimes(env: NodeJS.ProcessEnv = process.env, claude = 
       if (!path) return { id, state: "install" };
       try {
         if (id === "claude") {
-          const result = await run(path, ["auth", "status"], env);
-          return { id, path, state: result.code === 0 && /"loggedIn"\s*:\s*true/.test(result.text) ? "ready" : "signin" };
+          const result = await getClaudeStatus({ ...env, PI_CLAUDE_CODE_COMMAND: path }, AbortSignal.timeout(5000));
+          return { id, path, state: result.subscription ? "ready" : "signin" };
         }
         const versionResult = await run(path, ["--version"], env);
         const version = versionResult.text.match(/codex-cli\s+(\S+)/)?.[1];
@@ -109,4 +111,9 @@ export function providerRuntimes(env: NodeJS.ProcessEnv = process.env, claude = 
 }
 export async function discoverProviders(env: NodeJS.ProcessEnv = process.env, systemPaths = true): Promise<ProviderStatus[]> {
   return Promise.all(Object.values(providerRuntimes(env, undefined, systemPaths)).map(provider => provider.discover()));
+}
+
+export async function claudeEnvironment(env: NodeJS.ProcessEnv = process.env) {
+  const path = await binary("claude", env, true);
+  return path ? { ...env, PI_CLAUDE_CODE_COMMAND: path } : env;
 }

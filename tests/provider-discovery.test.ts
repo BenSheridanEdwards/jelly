@@ -51,7 +51,7 @@ test("both fake logins accept exact arguments and refresh to ready", async () =>
    await writeFile(join(home,".local/bin",id), `#!/bin/sh
 case "$*" in
 "--version") echo "codex-cli 1.0";;
-"auth status") test -f "$HOME/claude-ready" || exit 1; echo '{"loggedIn":true}';;
+"auth status") test -f "$HOME/claude-ready" || exit 1; echo '{"loggedIn":true,"subscriptionType":"max"}';;
 "login status") test -f "$HOME/codex-ready" || exit 1; echo 'Logged in using ChatGPT';;
 "auth login"|"login --device-auth") /usr/bin/touch "$HOME/${id}-ready"; echo 'https://auth.openai.com/codex/device';;
 *) exit 1;; esac

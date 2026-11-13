@@ -1,4 +1,5 @@
 import { createCodexProvider } from "./codex-provider";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { discoverProviders, type ProviderStatus } from "./providers";
 import { BROWSER_GUIDANCE } from "./browser/repl-docs";
 import { createJellyClaudeProvider } from "./claude-code-provider";
@@ -54,7 +55,18 @@ import { DESKTOP_INSTRUCTIONS } from "../shared/desktop";
 
 export class Harness {
   providers: ProviderStatus[] = [];
-  async refreshProviders() { this.providers = await discoverProviders(); }
+  private disconnected = new Set<string>();
+  cliConnected(id: string) { return !this.disconnected.has(id); }
+  setCliConnected(id: string, connected: boolean) {
+    const next = new Set(this.disconnected);
+    if (connected) next.delete(id); else next.add(id);
+    writeFileSync(join(this.dataDir, "cli-connections.json"), JSON.stringify([...next]), { mode: 0o600 });
+    this.disconnected = next;
+  }
+  async refreshProviders() {
+    this.providers = await discoverProviders();
+    await this.claude.refresh(true);
+  }
   private sessions = new WeakMap<AgentSession, SessionWork>();
   readonly chatgptTransport = new ChatGPTTransport();
   readonly images: GeneratedImages;
@@ -70,6 +82,8 @@ export class Harness {
     configDir?: string,
     readonly claude = new ClaudeCodeConnection(),
   ) {
+    const path = join(dataDir, "cli-connections.json");
+    if (existsSync(path)) this.disconnected = new Set(JSON.parse(readFileSync(path, "utf8")));
     this.images = new GeneratedImages(dataDir);
     this.files = new RenderedFiles(dataDir);
     this.mcps = new Mcps(configDir);
@@ -112,12 +126,15 @@ export class Harness {
     this.auth.reload();
     const chatgptReady = this.auth.hasAuth("openai-codex");
     const apiReady = this.auth.hasAuth("openai");
-    const { claudeReady, claudeNotice } = this.claude.status();
+    const status = this.claude.status();
+    const claudeReady = status.claudeReady && this.cliConnected("claude");
+    const claudeNotice = this.cliConnected("claude") ? status.claudeNotice : "Claude is disconnected from Jelly. Reconnect in Settings.";
+    const codexReady = this.cliConnected("codex") && this.providers.some(p => p.id === "codex" && p.state === "ready");
+    const disconnected = mode === "claude-code" && !this.cliConnected("claude") || mode === "codex-cli" && !this.cliConnected("codex");
     const activeMode =
       mode === "auto"
-        ? claudeReady ? "claude-code" : chatgptReady ? "chatgpt" : this.providers.some(p => p.id === "codex" && p.state === "ready") ? "codex-cli" : null
-        : mode;
-    const codexReady = this.providers.some(p => p.id === "codex" && p.state === "ready");
+        ? claudeReady ? "claude-code" : chatgptReady ? "chatgpt" : codexReady ? "codex-cli" : null
+        : disconnected ? null : mode;
     const ready = activeMode === "claude-code" ? claudeReady : activeMode === "chatgpt" ? chatgptReady : activeMode === "codex-cli" ? codexReady : activeMode === "api" && apiReady;
     const provider = activeMode === "claude-code" ? "claude-code" : activeMode === "chatgpt" ? "openai-codex" : activeMode === "codex-cli" ? "codex-cli" : activeMode === "api" ? "openai" : "";
     return {
@@ -132,7 +149,7 @@ export class Harness {
       claudeNotice,
       chatgptReady,
       apiReady,
-      notice: activeMode === "codex-cli" ? "Codex ChatGPT subscription" : activeMode === "claude-code" ? claudeNotice : !ready
+      notice: disconnected ? "This subscription is disconnected from Jelly. Reconnect in Settings." : activeMode === "codex-cli" ? codexReady ? "Codex ChatGPT subscription" : "Check the Codex CLI session in Settings, then recheck." : activeMode === "claude-code" ? claudeNotice : !ready
         ? activeMode === "chatgpt"
           ? "ChatGPT is not connected. Connect your ChatGPT subscription in Settings."
           : activeMode === "api"
