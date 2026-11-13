@@ -18,17 +18,17 @@ case "$*" in
     const launch = async () => {
       const code = `import {startApp} from './src/server/app'; const app = await startApp({dataDir:process.env.HOME+'/data',port:0,desktopOptions:{cliPath:null}}); console.log('URL '+app.server.url); process.on('SIGTERM',async()=>{await app.close();process.exit(0)});`;
       const child = Bun.spawn([process.execPath, "-e", code], { cwd: resolve(import.meta.dir, ".."),
-        env: { HOME: home, PATH: bin, SHELL: "/bin/false", TMPDIR: tmpdir() }, stdout: "pipe", stderr: "pipe" });
+        env: { HOME: home, PATH: "/usr/bin:/bin", SHELL: "/bin/false", TMPDIR: tmpdir() }, stdout: "pipe", stderr: "pipe" });
       const timer = setTimeout(() => child.kill("SIGKILL"), 15000);
       const reader = child.stdout.getReader(); let output = "";
       try { for (;;) { const chunk = await reader.read(); if (chunk.done) throw Error(output + await new Response(child.stderr).text()); output += new TextDecoder().decode(chunk.value); const url = output.match(/URL (http:\/\/\S+)/)?.[1]; if (url) return { child, url }; } }
       finally { clearTimeout(timer); reader.releaseLock(); }
     };
     let server = await launch();
-    const request = async (path: string, method = "GET", value?: unknown) => {
+    const request = async (path: string, method = "GET", value?: unknown, expected = 200) => {
       const session = await fetch(server.url + "api/control-session");
       const response = await fetch(server.url + "api/" + path, { method, headers: { "Content-Type": "application/json", cookie: session.headers.get("set-cookie")!.split(";")[0]!, "x-jelly-csrf": (await session.json()).csrf }, body: value === undefined ? undefined : JSON.stringify(value) });
-      expect(response.status).toBe(200); return response.json();
+      expect(response.status).toBe(expected); return response.json();
     };
     const restart = async () => { server.child.kill("SIGKILL"); await server.child.exited; server = await launch(); };
     try {
@@ -44,10 +44,16 @@ case "$*" in
       renameSync(join(home, "signedout"), join(home, "old-signedout"));
       await request(`providers/${id}/reconnect`, "POST", {});
       expect((await request("state")).config).toMatchObject({ mode, ready: true });
+      for (const action of ["disconnect", "reconnect"]) {
+        expect((await fetch(server.url + `api/providers/${id}/${action}`, { method: "POST" })).status).toBe(401);
+        const session = await fetch(server.url + "api/control-session");
+        expect((await fetch(server.url + `api/providers/${id}/${action}`, { method: "POST", headers: {cookie:session.headers.get("set-cookie")!.split(";")[0]!} })).status).toBe(403);
+      }
       await request(`providers/${id}/disconnect`, "POST", {});
       await restart(); state = await request("state");
       expect(state.config.activeMode).not.toBe(mode);
-      expect((await request(`state?agentId=${agentId}`)).agentConfig.ready).toBe(false);
+      expect((await request(`state?agentId=${agentId}`)).agentConfig).toMatchObject({ ready: false, activeMode: null });
+      await request(`agents/${agentId}/messages`, "POST", { text: "Must stay disconnected", requestId: "disconnected" }, 409);
       const discovered = (await request("providers")).find((p: any) => p.id === id);
       expect(discovered).toMatchObject({ state: "ready", disconnected: true, path: join(bin, id) });
       expect(readFileSync(join(home, "invocations"), "utf8")).not.toMatch(/logout|auth login|device-auth|install/);

@@ -1,7 +1,7 @@
-import { useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import { ChevronRight, Check } from "lucide-react";
 import { Modal } from "./Modal";
-import { Onboarding } from "./Onboarding";
+import { Onboarding, type Provider } from "./Onboarding";
 import { Connections } from "./Connections";
 import { FirecrawlConnection } from "./FirecrawlConnection";
 import { ComputerControlPanel } from "./ComputerControlPanel";
@@ -103,6 +103,12 @@ export function Settings({
   onClose: () => void;
   refresh: () => Promise<void>;
 }) {
+  const [providers, setProviders] = useState<Provider[]>([]);
+  useEffect(() => { let active = true; void api<Provider[]>("/providers").then(value => { if (active && Array.isArray(value)) setProviders(value); }).catch(() => {}); return () => { active = false; }; }, []);
+  const cliStatus = (id: Provider["id"]) => {
+    const provider = providers.find(p => p.id === id);
+    return !provider ? "Checking…" : provider.state === "ready" ? provider.disconnected ? "Disconnected" : "Ready" : "Setup required";
+  };
   const [mode, setMode] = useState<Mode>(data.config.mode);
   const [model, setModel] = useState<ModelId>(data.config.selectedModel);
   const [effort, setEffort] = useState<Effort>(data.config.effort);
@@ -129,6 +135,7 @@ export function Settings({
         : "Connect your account in Settings.",
     },
     { id: "claude-code" as const, label: "Claude subscription", detail: data.config.claudeNotice ?? "Check Claude Code on this Jelly computer." },
+    { id: "codex-cli" as const, label: "Codex subscription", detail: cliStatus("codex") },
     {
       id: "api" as const,
       label: "OpenAI API",
@@ -241,8 +248,8 @@ export function Settings({
                 value={data.config.chatgptReady ? "Connected" : "Not connected"}
                 onClick={() => setPage("ChatGPT")}
               />
-              <SettingsRow label="Codex subscription" value="Check CLI session" onClick={() => setPage("Codex subscription")} />
-              <SettingsRow label="Claude subscription" value={data.config.claudeReady ? "Ready" : "Setup required"} onClick={() => setPage("Claude subscription")} />
+              <SettingsRow label="Codex subscription" value={cliStatus("codex")} onClick={() => setPage("Codex subscription")} />
+              <SettingsRow label="Claude subscription" value={cliStatus("claude")} onClick={() => setPage("Claude subscription")} />
               <SettingsRow
                 label="OpenAI API"
                 value={data.config.apiReady ? "Connected" : "Not connected"}
@@ -324,11 +331,15 @@ export function Settings({
           onChange={(next) => { setMode(next); if (!modelsForMode(next).some(option => option.id === model)) setModel(defaultModelForMode(next)); }}
         />
       )}
-      {(page === "Claude subscription" || page === "Codex subscription") && <Onboarding agentId={data.agents[0]?.id ?? ""} onSelected={() => void refresh()} />}
+      {(page === "Claude subscription" || page === "Codex subscription") && <Onboarding only={page === "Claude subscription" ? "claude" : "codex"} onSelected={next => {
+        if (next) { setMode(next); if (!modelsForMode(next).some(m => m.id === model)) setModel(defaultModelForMode(next)); }
+        void api<Provider[]>("/providers").then(value => { if (Array.isArray(value)) setProviders(value); }).catch(() => {});
+        void refresh();
+      }} />}
       {(page === "ChatGPT" || page === "OpenAI API") && (
         <Connections
           onDirty={setDetailDirty}
-          only={page === "Claude subscription" ? "claude-code" : page === "ChatGPT" ? "chatgpt" : "api"}
+          only={page === "ChatGPT" ? "chatgpt" : "api"}
           onConnected={() => { void refresh(); }}
         />
       )}

@@ -3135,7 +3135,8 @@ test("a connection is required to send, Settings has no demo option, and connect
   expect(app.store.runs(app.store.agents()[0]!.id)).toEqual([]);
   fireEvent.click(screen.getByRole("button", { name: "Connect an account" }));
   fireEvent.click(screen.getByRole("button", { name: "New agent provider" }));
-  expect(screen.getAllByRole("radio")).toHaveLength(4);
+  expect(screen.getAllByRole("radio")).toHaveLength(5);
+  expect(screen.getByRole("radio", { name: /^Codex subscription/ })).toBeDefined();
   expect(screen.queryByRole("radio", { name: /demo/i })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Back" }));
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
@@ -3856,25 +3857,24 @@ test("composer selects Claude before a run, shows adjacent provider/model/effort
   expect(screen.queryByLabelText("Message delivery")).toBeNull();
 });
 
-test("Claude Settings offers host CLI instructions and status refresh without OAuth or retargeting agents", async () => {
+test("Claude Settings rechecks discovery without retargeting agents", async () => {
   const app = await setup();
   const id = app.store.agents()[0]!.id;
   app.service.setConfig({ agentId: id, mode: "api" });
   let refreshes = 0;
-  app.service.harness.claude.refresh = async () => {
+  app.service.harness.refreshProviders = async () => {
     refreshes++;
-    return { claudeReady: true, claudeNotice: "Claude subscription fixture ready" };
+    app.service.harness.providers = [{ id: "claude", state: "signin", path: "/fake/claude" }];
   };
   render(<App />);
   await waitForConnectedAgent();
   fireEvent.click(screen.getByRole("button", { name: "Agent list menu" }));
   fireEvent.click(screen.getByRole("menuitem", { name: "Settings" }));
   fireEvent.click(screen.getByRole("button", { name: "Claude subscription" }));
-  expect(await screen.findByText("Claude subscription fixture ready")).toBeDefined();
-  expect(screen.getByText("claude auth login")).toBeDefined();
-  expect(screen.getByText("PI_CLAUDE_CODE_COMMAND")).toBeDefined();
+  expect(await screen.findByRole("button", { name: "Sign in" })).toBeDefined();
+  expect(screen.getByText("/fake/claude")).toBeDefined();
   expect(screen.queryByRole("link", { name: /Continue to Claude/ })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Refresh Claude status" }));
+  fireEvent.click(screen.getByRole("button", { name: "Recheck CLI sessions" }));
   await waitFor(() => expect(refreshes).toBeGreaterThan(1));
   expect(app.store.agent(id)?.mode).toBe("api");
   expect(app.store.instance().mode).toBe("api");
