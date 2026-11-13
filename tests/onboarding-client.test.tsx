@@ -116,3 +116,29 @@ for (const [id, mode, label] of [["claude", "claude-code", "Claude"], ["codex", 
   expect(saved[0].agentId).toBeUndefined();
  } finally {globalThis.fetch=original;}
 });
+
+test("host choice validates URLs and keeps local selection here", async () => {
+ const {HostChoice} = await import("../src/client/Onboarding");
+ const destinations: string[] = []; let local = false;
+ render(<HostChoice onLocal={()=>{local=true;}} navigate={url=>destinations.push(url)}/>);
+ fireEvent.click(screen.getByRole("button",{name:"Use this device as the Jelly host"}));
+ expect(local).toBe(true);
+ for(const url of ["", "javascript:alert(1)", "file:///etc/passwd"]) {
+  fireEvent.change(screen.getByLabelText("Existing Jelly host URL"),{target:{value:url}});
+  fireEvent.submit(screen.getByRole("button",{name:"Connect to existing host"}).closest("form")!);
+  expect(screen.getByRole("alert")).toBeTruthy();
+ }
+ expect(destinations).toEqual([]);
+ fireEvent.change(screen.getByLabelText("Existing Jelly host URL"),{target:{value:"https://jelly.example/"}});
+ fireEvent.submit(screen.getByRole("button",{name:"Connect to existing host"}).closest("form")!);
+ expect(destinations).toEqual(["https://jelly.example/"]);
+});
+test("phone provider actions identify their host", () => {
+ const actions: string[] = [];
+ render(<OnboardingCards hostName="Studio" mobile providers={[{id:"claude",state:"signin"},{id:"codex",state:"install"}]} onUse={()=>{}} onAction={p=>actions.push(p.state)}/>);
+ expect(screen.getByText(/Connected Jelly host: Studio/)).toBeTruthy();
+ expect(screen.getByText(/computer running Jelly/)).toBeTruthy();
+ fireEvent.click(screen.getByRole("button",{name:"Sign in on host"}));
+ fireEvent.click(screen.getByRole("button",{name:"Install on host"}));
+ expect(actions).toEqual(["signin","install"]);
+});
