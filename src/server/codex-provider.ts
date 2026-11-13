@@ -3,6 +3,7 @@ import { getBuiltinModels } from "@earendil-works/pi-ai/providers/all";
 import type { ProviderStatus } from "./providers";
 
 export function createCodexProvider(status: () => ProviderStatus | undefined) {
+  const threads = new Map<string, string>();
   function stream(model: Model<any>, context: TranscriptContext, options?: SimpleStreamOptions) {
     const events = createAssistantMessageEventStream();
     const message: AssistantMessage = {
@@ -30,13 +31,24 @@ export function createCodexProvider(status: () => ProviderStatus | undefined) {
           (proc.stdin as Bun.FileSink).write(JSON.stringify({ ...(request ? { id: next } : {}), method, params }) + "\n");
           return next;
         };
-        const abort = () => proc.kill();
+        let threadId = "";
+        let turnId = "";
+        let interruptSent = false;
+        let killTimer: ReturnType<typeof setTimeout> | undefined;
+        const abort = () => {
+          if (threadId && turnId && !interruptSent) {
+            interruptSent = true;
+            send("turn/interrupt", { threadId, turnId });
+          }
+          killTimer ??= setTimeout(() => proc.kill(), 5000);
+        };
         options?.signal?.addEventListener("abort", abort, { once: true });
         const timeout = setTimeout(abort, 300000);
         try {
           options?.signal?.throwIfAborted();
           let phase = send("initialize", { clientInfo: { name: "jelly", version: "0.1.0" } });
-          let threadId = "";
+          const sessionId = options?.sessionId;
+          const resuming = !!sessionId && threads.has(sessionId);
           events.push({ type: "start", partial: message });
           events.push({ type: "text_start", contentIndex: 0, partial: message });
           let buffer = "";
@@ -52,12 +64,17 @@ export function createCodexProvider(status: () => ProviderStatus | undefined) {
               if (value.id === phase) {
                 if (!threadId && value.result?.thread) {
                   threadId = value.result.thread.id;
-                  const text = JSON.stringify(context.messages);
+                  if (sessionId) threads.set(sessionId, threadId);
+                  const text = JSON.stringify(sessionId && threads.has(sessionId) && resuming ? context.messages.slice(-1) : context.messages);
                   phase = send("turn/start", { threadId, input: [{ type: "text", text }] });
                 } else if (!threadId) {
                   send("initialized", {}, false);
-                  phase = send("thread/start", { model: model.id, approvalPolicy: "never", sandbox: "read-only", baseInstructions: getCurrentSystemPrompt(context.messages) });
+                  phase = send(sessionId && threads.has(sessionId) ? "thread/resume" : "thread/start", { ...(sessionId && threads.has(sessionId) ? { threadId: threads.get(sessionId) } : {}), model: model.id, approvalPolicy: "never", sandbox: "read-only", baseInstructions: getCurrentSystemPrompt(context.messages) });
                 }
+              }
+              if (value.result?.turn?.id || value.method === "turn/started") {
+                turnId = value.result?.turn?.id ?? value.params.turn.id;
+                if (options?.signal?.aborted) abort();
               }
               if (value.method === "item/agentMessage/delta") {
                 const delta = value.params.delta;
@@ -65,6 +82,10 @@ export function createCodexProvider(status: () => ProviderStatus | undefined) {
                 events.push({ type: "text_delta", contentIndex: 0, delta, partial: message });
               }
               if (value.method === "turn/completed") {
+                if (value.params.turn.status === "interrupted") {
+                  message.stopReason = "aborted";
+                  events.push({ type: "error", reason: "aborted", error: message }); events.end(); return;
+                }
                 if (value.params.turn.status !== "completed") throw new Error(value.params.turn.error?.message || "Codex turn failed");
                 events.push({ type: "text_end", contentIndex: 0, content: (message.content[0] as { text: string }).text, partial: message });
                 events.push({ type: "done", reason: "stop", message }); events.end(); return;
@@ -73,7 +94,7 @@ export function createCodexProvider(status: () => ProviderStatus | undefined) {
             }
           }
           throw new Error("Codex app-server exited before completion");
-        } finally { clearTimeout(timeout); options?.signal?.removeEventListener("abort", abort); }
+        } finally { clearTimeout(timeout); clearTimeout(killTimer); options?.signal?.removeEventListener("abort", abort); }
       } catch (error) {
         message.stopReason = options?.signal?.aborted ? "aborted" : "error";
         message.errorMessage = error instanceof Error ? error.message : String(error);
