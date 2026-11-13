@@ -1,7 +1,7 @@
 import { unavailableClaudeStatus } from "./fixtures/claude-code";
 import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, statSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { resolve, join } from "node:path";
 import { tmpdir } from "node:os";
 import { startApp } from "../src/server/app";
 import type { ChatGPTLogin } from "../src/server/connections";
@@ -24,7 +24,7 @@ const credentials = {
   accountId: "test-account",
 };
 async function fixture(login?: ChatGPTLogin, ttl = 10000) {
-  const dir = mkdtempSync(join(tmpdir(), "jelly-connections-"));
+  const dir = resolve(mkdtempSync(join(tmpdir(), "jelly-connections-")));
   const app = await startApp({ claudeStatusCheck: unavailableClaudeStatus,
     dataDir: dir,
     configDir: join(dir, "config"),
@@ -329,4 +329,12 @@ test("production startup has no scripted provider and requires credentials even 
   expect(response.status).toBe(409);
   expect(await response.text()).toContain("Settings");
   expect(app.store.runs(snapshot.agents[0]!.id)).toEqual([]);
+});
+
+test("auto never spends an API key and codex-cli stays unavailable until its runtime exists", async () => {
+  const { app } = await fixture();
+  const h = app.service.harness;
+  await h.auth.saveKey(key);
+  expect(h.config("auto").activeMode).not.toBe("api");
+  expect(h.config("codex-cli" as any).ready).toBe(false);
 });
