@@ -194,6 +194,7 @@ test("device login belongs to its starting session and automatically saves only 
     type: "oauth",
   });
   expect(statSync(join(f.dir, "auth.json")).mode & 0o777).toBe(0o600);
+  await until(async () => (await (await f.req("/status", {}, headers)).json()).flow?.status === "connected");
   const completed = await (await f.req("/status", {}, headers)).json();
   expect(completed.flow).toMatchObject({
     status: "connected",

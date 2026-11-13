@@ -2661,7 +2661,7 @@ test("Fresh Session menu action preserves chat and shows a durable session bound
 test("read-tool image attachments render outside work disclosures live and after remount", async () => {
   const app = await setup();
   const agent = app.store.agents()[0]!;
-  const run = app.store.createRun(agent.id, crypto.randomUUID(), "Show ad", "openai", "gpt-6-astra");
+  const run = app.store.createRun(agent.id, crypto.randomUUID(), "Show ad", "api", "gpt-6-astra");
   const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a7L8AAAAASUVORK5CYII=";
   app.store.event(agent.id, run.id, "message", { role: "user", text: "Show the ad image" });
   app.store.event(agent.id, run.id, "tool_started", { name: "read", toolCallId: "ad-read", args: { path: "ad.png" } });
