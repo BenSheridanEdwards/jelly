@@ -24,6 +24,8 @@ import type { SubagentSources } from "./subagent-projection";
 import { ALL_PI_TOOLS, preparePi } from "./pi-setup";
 import { JellyAuth } from "./auth";
 import {
+  compatibleModel,
+  defaultModelForMode,
   DEFAULT_MODEL,
   DEFAULT_EFFORT,
   upstreamModel,
@@ -137,14 +139,18 @@ export class Harness {
         : disconnected ? null : mode;
     const ready = activeMode === "claude-code" ? claudeReady : activeMode === "chatgpt" ? chatgptReady : activeMode === "codex-cli" ? codexReady : activeMode === "api" && apiReady;
     const provider = activeMode === "claude-code" ? "claude-code" : activeMode === "chatgpt" ? "openai-codex" : activeMode === "codex-cli" ? "codex-cli" : activeMode === "api" ? "openai" : "";
+    const route = activeMode ?? (mode !== "auto" ? mode : null);
+    const selectedModel = route && !compatibleModel(route, settings.model)
+      ? defaultModelForMode(route)
+      : settings.model;
     return {
       mode,
-      selectedModel: settings.model,
+      selectedModel,
       effort: settings.effort,
       activeMode,
       ready,
       provider,
-      model: upstreamModel(settings.model),
+      model: upstreamModel(selectedModel),
       claudeReady,
       claudeNotice,
       chatgptReady,

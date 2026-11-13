@@ -1,3 +1,4 @@
+import { compatibleModel } from "../src/shared/models";
 import { unavailableClaudeStatus } from "./fixtures/claude-code";
 import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, statSync, readFileSync } from "node:fs";
@@ -370,3 +371,46 @@ for (const provider of ["claude","codex"]) for (const action of ["signin","insta
   expect((await post({cookie:headers.cookie})).status).toBe(403);
  });
 }
+
+test("resolved routes choose compatible models without changing Auto preferences", async () => {
+  const { app } = await fixture();
+  const h = app.service.harness;
+  h.auth.hasAuth = () => false;
+  h.providers = [{ id: "codex", state: "ready", version: "1.0", path: "/fake/codex" }];
+  const settings = { model: "claude-opus-5-5", effort: "medium" } as const;
+  for (const route of ["codex-cli", "chatgpt"] as const) {
+    h.auth.hasAuth = () => route === "chatgpt";
+    const config = h.config("auto", settings);
+    expect(config.activeMode).toBe(route);
+    expect(config.selectedModel.startsWith("claude-")).toBe(false);
+    expect(config.model.startsWith("claude-")).toBe(false);
+    expect(h.registry.find(config.provider, config.model)).toBeDefined();
+  }
+  h.claude.status = () => ({ claudeReady: true, claudeNotice: "ready" });
+  const config = h.config("auto");
+  expect(config.activeMode).toBe("claude-code");
+  expect(config.provider).toBe("claude-code");
+  expect(config.selectedModel).toBe("claude-opus-5-5");
+  expect(config.model).toBe("claude-opus-5-5");
+  expect(compatibleModel("claude-code", config.selectedModel)).toBe(true);
+  expect(h.registry.find(config.provider, config.model)).toBeDefined();
+  expect(settings.model).toBe("claude-opus-5-5");
+  expect(compatibleModel("auto", "gpt-6-astra")).toBe(true);
+});
+
+test("explicit routes remap incompatible models and unresolved Auto preserves them", async () => {
+  const { app } = await fixture();
+  const h = app.service.harness;
+  for (const [mode, model, expected] of [
+    ["claude-code", "gpt-6-astra", "claude-opus-5-5"],
+    ["api", "claude-opus-5-5", "gpt-6-astra"],
+  ] as const) {
+    const config = h.config(mode, { model, effort: "medium" });
+    expect(config.selectedModel).toBe(expected);
+    expect(config.model).toBe(expected);
+  }
+  h.providers = [];
+  h.auth.hasAuth = () => false;
+  expect(h.config("auto").activeMode).toBeNull();
+  expect(h.config("auto").selectedModel).toBe("gpt-6-astra");
+});
