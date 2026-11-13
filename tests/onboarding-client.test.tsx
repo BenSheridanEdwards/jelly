@@ -1,6 +1,6 @@
 await import("./dom");
 import { afterEach, expect, test } from "bun:test";
-import { render, screen, cleanup, fireEvent } from "@testing-library/react";
+const { render, screen, cleanup, fireEvent } = await import("@testing-library/react");
 import { OnboardingCards } from "../src/client/Onboarding";
 afterEach(cleanup);
 test("ready subscription sessions show versions and select their exact provider", () => {
@@ -20,3 +20,23 @@ for (const [state,label] of [["install","Install"],["signin","Sign in"],["error"
     expect(screen.queryByRole("button",{name:"Use Claude Code"})).toBeNull();
   });
 }
+test("authenticated discovery selects the CLI mode through config", async () => {
+  const { Onboarding } = await import("../src/client/Onboarding");
+  const { waitFor } = await import("@testing-library/react");
+  const original = globalThis.fetch;
+  const calls: {url: string; init?: RequestInit}[] = [];
+  globalThis.fetch = (async (url: any, init?: RequestInit) => {
+    calls.push({url: String(url), init});
+    return Response.json(String(url).endsWith("/control-session") ? {csrf:"test"} : String(url).endsWith("/providers") ? [{id:"codex",state:"ready"}] : {});
+  }) as typeof fetch;
+  try {
+    let selected = false;
+    render(<Onboarding agentId="agent" onSelected={() => {selected = true;}} />);
+    fireEvent.click(await screen.findByRole("button", {name:"Use Codex"}));
+    await waitFor(() => expect(selected).toBe(true));
+    const config = calls.find(call => call.url === "/api/config")!;
+    expect(config.init?.method).toBe("PUT");
+    expect(JSON.parse(config.init?.body as string)).toEqual({agentId:"agent",mode:"codex-cli"});
+    expect(calls.find(call => call.url === "/api/providers")?.init?.credentials).toBe("same-origin");
+  } finally { globalThis.fetch = original; }
+});
