@@ -153,7 +153,8 @@ test("Done and cancellation notify only bound sign-in requests, even after disco
       method: "POST", headers: { cookie, "x-jelly-csrf": csrf, "content-type": "application/json" }, body: JSON.stringify(body),
     });
     const agent = app.store.agents()[0]!;
-    const run = app.store.createRun(agent.id, "done-fixture", "request", "demo", "local-demo");
+    app.service.setConfig({ agentId: agent.id, mode: "api" });
+    const run = app.store.createRun(agent.id, "done-fixture", "request", "api", "gpt-6-astra");
     const browser = chrome.allocate(agent.id, run.id, { chromeProfile: profile }, agent.name);
     const request = () => app.service.interventions.request("browser_login", agent.id, run.id, { url: "https://example.com", reason: "Fixture" });
     const first = request();
