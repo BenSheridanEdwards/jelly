@@ -79,3 +79,11 @@ for (const cancel of [true,false]) test(`pending action aborts on ${cancel ? "Ca
   await waitFor(()=>expect(signal!.aborted).toBe(true));
  } finally {globalThis.fetch=original;}
 });
+
+test("connections offer explicit recheck", async () => {
+ const {Onboarding} = await import("../src/client/Onboarding");
+ const original = globalThis.fetch;
+ globalThis.fetch = (async () => Response.json([{id:"codex",state:"ready"}])) as typeof fetch;
+ try { render(<Onboarding agentId="fake" onSelected={()=>{}}/>); expect(await screen.findByRole("button",{name:"Recheck CLI sessions"})).toBeTruthy(); }
+ finally {globalThis.fetch=original;}
+});
